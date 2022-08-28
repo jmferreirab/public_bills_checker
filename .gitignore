@@ -103,3 +103,4 @@ ENV/
 
 # IDE settings
 .idea/
+public_bills_checker/res/params.json
