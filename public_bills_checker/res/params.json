@@ -1,0 +1,14 @@
+{
+    "services": {
+        "electricity": {
+            "provider": "enel",
+            "nav_url": "https://www.enel.com.co/es/personas/servicio-al-cliente/factura-express.html",
+            "account_identifier": "0000000-0"
+        },
+        "water": {
+            "provider": "EAAB ESP",
+            "nav_url": "https://pagos.acueducto.com.co/",
+            "account_identifier": "00000000"
+        }
+    }
+}
