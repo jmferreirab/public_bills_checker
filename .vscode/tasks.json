@@ -1,0 +1,42 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "run package", // Name of task
+            "type": "process",
+            "command": "env/scripts/python.exe", // Enter your command here
+            "args": [
+                ".\\${workspaceFolderBasename}\\checker.py"
+            ],
+            "group": "none",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "runOptions": {
+                "runOn": "default"
+            },
+            "options": {
+                "cwd": "${workspaceFolder}/"
+            }
+        },
+        {
+            "label": "pylint", // Name of task
+            "type": "process",
+            "command": "env/scripts/python.exe", // Enter your command here
+            "args": [
+                "-m",
+                "pylint",
+                "./${workspaceFolderBasename}"
+            ],
+            "group": "none",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "runOptions": {
+                "runOn": "default"
+            }
+        }
+    ]
+}

@@ -1,0 +1,20 @@
+{
+    "editor.formatOnSave": true,
+    "python.formatting.provider": "black",
+    "python.linting.enabled": false,
+    "python.linting.pylintEnabled": false,
+    "python.formatting.blackArgs": [
+        "--line-length",
+        "80",
+        "--experimental-string-processing"
+    ],
+    "[dockerfile]": {
+        "editor.formatOnSave": false
+    },
+    "python.terminal.activateEnvironment": true,
+    "python.defaultInterpreterPath": "env/Scripts/python",
+    "scm.alwaysShowRepositories": true,
+    "scm.defaultViewMode": "tree",
+    "workbench.quickOpen.closeOnFocusLost": false,
+    "interactiveWindow.restore": true
+}
