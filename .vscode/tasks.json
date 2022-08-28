@@ -2,9 +2,9 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "run package", // Name of task
+            "label": "run package",
             "type": "process",
-            "command": "env/scripts/python.exe", // Enter your command here
+            "command": "env/scripts/python.exe",
             "args": [
                 ".\\${workspaceFolderBasename}\\checker.py"
             ],
@@ -21,9 +21,9 @@
             }
         },
         {
-            "label": "pylint", // Name of task
+            "label": "pylint",
             "type": "process",
-            "command": "env/scripts/python.exe", // Enter your command here
+            "command": "env/scripts/python.exe",
             "args": [
                 "-m",
                 "pylint",
