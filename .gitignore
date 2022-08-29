@@ -104,3 +104,5 @@ ENV/
 # IDE settings
 .idea/
 public_bills_checker/res/params.json
+public_bills_checker/rust_mozprofile/
+public_bills_checker/images/

@@ -2,11 +2,10 @@
 
 # import sys
 import os
-from inspect import getsourcefile
-from os.path import abspath
 from dataclasses import dataclass
 import logging
 import json
+import time
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
@@ -15,32 +14,28 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.remote.webelement import WebElement
+import winsound
 
 logging.basicConfig(
     level=logging.INFO,
     format=(
-        "%(asctime)s | %(module)-18s | %(levelname)s | %(funcName)s -- l"
-        "%(lineno)d | %(message)s"
+        "%(asctime)s | %(module)-10s | %(levelname)-5s | %(funcName)15s -- l"
+        "%(lineno)4d | %(message)s"
     ),
-    datefmt="%Y-%m-%dT%H:%M:%S%z",
+    datefmt="%Y-%m-%dT%H:%M",
 )
 logger = logging.getLogger(__name__)
 fh = logging.FileHandler("log.log", mode="a")  # append
 fm = logging.Formatter(
     fmt=(
-        "%(asctime)s | %(module)-18s | %(levelname)s | %(funcName)s -- l"
-        " %(lineno)d | %(message)s"
+        "%(asctime)s | %(module)-10s | %(levelname)-5s | %(funcName)15s -- l"
+        "%(lineno)4d | %(message)s"
     ),
-    datefmt="%Y-%m-%dT%H:%M:%S%z",
+    datefmt="%Y-%m-%dT%H:%M",
 )
 fh.setLevel(logging.INFO)
 fh.setFormatter(fm)
 logger.addHandler(fh)
-
-
-PROJECT_ROOT = os.path.abspath(".")
-logger.info("Running from: " + abspath(getsourcefile(lambda: 0)))
-logger.info("Running from: " + PROJECT_ROOT)
 
 
 class FirefoxDriverWrapper:
@@ -66,14 +61,12 @@ class FirefoxDriverWrapper:
         service = Service(executable_path)
 
         if os.path.exists(sample_profile_path):
-            logging.info("Attempting to use cached profile")
+            logger.info("Attempting to use cached profile")
             m_options.add_argument("-profile")
-            # this will still copy to temp the sample profile but with cache.
             m_options.add_argument(sample_profile_path)
-            # m_options.set_preference("profile", PROJECT_ROOT + "\\rust_mozprofile")
             self.cached_browser = True
         else:
-            logging.info("Running with blank profile")
+            logger.info("Running with blank profile")
             self.cached_browser = False
 
         self.driver = webdriver.Firefox(
@@ -124,10 +117,10 @@ def route_service_to_handler(
     if service.provider == "enel":
         enel_handler(driverWrapper, service)
     elif service.provider == "EAAB ESP":
-        print("routing to EAAB ESP")
+        eab_handler(driverWrapper, service)
         pass
-    elif service.provider == "C":
-        print("routing to C")
+    elif service.provider == "Vanti S.A. E.S.P.":
+        vanti_handler(driverWrapper, service)
         pass  # raise NotImplementedError()
     elif service.provider == "D":
         print("routing to D")
@@ -135,20 +128,24 @@ def route_service_to_handler(
 
 
 def enel_handler(driverWrapper: FirefoxDriverWrapper, service: PublicService):
+
+    # TODO Add better wrapping so errors in a handler allow logged exits
+
     driverWrapper.driver.get(service.url)
 
     el: WebElement
 
+    # Accept cookies button. If not shown, then keep going normally.
     try:
         driverWrapper.driver.find_element(
             By.XPATH, '//*[@id="truste-consent-button"]'
         ).click()
     except:
-        pass
+        logger.info("No ENEL captcha required.")
 
     driverWrapper.driver.get(service.url)
 
-    el = WebDriverWait(driverWrapper.driver, 10).until(
+    el = WebDriverWait(driverWrapper.driver, 20).until(
         EC.presence_of_element_located((By.XPATH, '//*[@id="numero_cuenta"]'))
     )
     el.send_keys(service.account_reference.split("-")[0])
@@ -159,7 +156,7 @@ def enel_handler(driverWrapper: FirefoxDriverWrapper, service: PublicService):
     el = driverWrapper.driver.find_element(By.XPATH, '//*[@id="solicitar"]')
     el.send_keys(Keys.ENTER)
 
-    el = WebDriverWait(driverWrapper.driver, 15).until(
+    el = WebDriverWait(driverWrapper.driver, 20).until(
         EC.presence_of_element_located(
             (By.XPATH, '//*[@id="DataTables_Table_0"]/tbody/tr[1]')
         )
@@ -167,12 +164,103 @@ def enel_handler(driverWrapper: FirefoxDriverWrapper, service: PublicService):
 
     import re
 
+    timestr = time.strftime("%Y%m%d-%H%M")
+    driverWrapper.driver.get_screenshot_as_file(
+        "./images/enel-" + timestr + ".png"
+    )
     pttern = re.compile(r"[\n\t]")
     x = tuple(pttern.split(el.get_attribute("innerText")))
     logger.info(str(("Enel",) + x))
     _, date_issued, pay_amount, payment_source, status, _ = x
     if status == "Emitida":
         status = "Payment not registered."
+
+
+def eab_handler(driverWrapper: FirefoxDriverWrapper, service: PublicService):
+
+    # TODO Add better wrapping so errors in a handler allow logged exits
+
+    driverWrapper.driver.get(service.url)
+
+    el: WebElement
+
+    driverWrapper.driver.get(service.url)
+
+    el = WebDriverWait(driverWrapper.driver, 20).until(
+        EC.presence_of_element_located(
+            (By.XPATH, '//*[@id="MainContent_tbxContractAccount"]')
+        )
+    )
+    el.send_keys(service.account_reference)
+    el.send_keys(Keys.ENTER)
+
+    el = WebDriverWait(driverWrapper.driver, 20).until(
+        EC.presence_of_element_located(
+            (By.XPATH, '//*[@id="MainContent_pnlBills"]')
+        )
+    )
+
+    timestr = time.strftime("%Y%m%d-%H%M")
+    driverWrapper.driver.get_screenshot_as_file(
+        "./images/eab-" + timestr + ".png"
+    )
+    text = el.get_attribute("innerText")
+    status = "Aprobada" if "aprobada" in text.lower() else "No paga"
+    logger.info(str(("EAB", "Ultima factura", status)))
+
+
+def vanti_handler(driverWrapper: FirefoxDriverWrapper, service: PublicService):
+
+    # TODO Add better wrapping so errors in a handler allow logged exits
+
+    driverWrapper.driver.get(service.url)
+
+    el: WebElement
+
+    driverWrapper.driver.get(service.url)
+
+    el = driverWrapper.driver.find_element(By.XPATH, '//*[@id="queryID"]')
+    el.send_keys(service.account_reference)
+    el = WebDriverWait(driverWrapper.driver, 20).until(
+        EC.presence_of_element_located(
+            (By.XPATH, '//*[@id="select2-projectId-container"]')
+        )
+    )
+    el.click()
+    el = WebDriverWait(driverWrapper.driver, 20).until(
+        EC.presence_of_element_located(
+            (By.XPATH, '(//*[@id="select2-projectId-results"]//li)[2]')
+        )
+    )
+    el.click()
+
+    duration = 1000  # milliseconds
+    freq = 440  # Hz
+    winsound.Beep(freq, duration)
+    input("Paused. Waiting for user to type captcha. Press ENTER to resume.")
+
+    el = WebDriverWait(driverWrapper.driver, 20).until(
+        EC.presence_of_element_located(
+            (By.XPATH, "/html/body/div[1]/div[3]/div/form/div[2]/table[1]")
+        )
+    )
+
+    #     "Pagar	No. Pago	Cuenta Contrato	Valor Total a Pagar
+    # Pagar	62685426280822	62685426	$ 15.000"
+
+    timestr = time.strftime("%Y%m%d-%H%M")
+    driverWrapper.driver.get_screenshot_as_file(
+        "./images/vanti-" + timestr + ".png"
+    )
+
+    try:
+        text = el.get_attribute("innerText")
+        text = text.splitlines()[1]
+        text = tuple(text.split("\t")[2:4]) + ("Pendiente",)
+    except:
+        text = ("No encontrada (Paga?)",)
+
+    logger.info(str(("Vanti",) + text))
 
 
 def main():
@@ -189,16 +277,24 @@ def main():
 
     os.chdir("./public_bills_checker")
 
-    driver_wrapper = FirefoxDriverWrapper()
-    driver = driver_wrapper.driver
-    service_list = parse_bill_parameters()
+    try:
+        os.mkdir("images")
+    except:
+        pass
 
-    service: PublicService
-    for service in service_list:
-        route_service_to_handler(driver_wrapper, service)
-        break
+    try:
+        driver_wrapper = FirefoxDriverWrapper()
+        driver = driver_wrapper.driver
+        service_list = parse_bill_parameters()
 
-    driver.quit()
+        service: PublicService
+        for service in service_list:
+            route_service_to_handler(driver_wrapper, service)
+            # break
+    except Exception as e:
+        logger.exception(e)
+    finally:
+        driver.quit()
 
 
 main()
