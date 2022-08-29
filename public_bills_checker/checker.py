@@ -1,11 +1,15 @@
 """Package module defining RPA/Scraper logic."""
 
+from __future__ import annotations
+
 # import sys
 import os
 from dataclasses import dataclass
 import logging
 import json
 import time
+import re
+import winsound
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.firefox.service import Service
@@ -14,7 +18,8 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.remote.webelement import WebElement
-import winsound
+from selenium.common.exceptions import NoSuchElementException
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -77,169 +82,188 @@ class FirefoxDriverWrapper:
 
 
 @dataclass
-class PublicService:
+class WebBillData:
+    """Holds data associated to a service bill."""
+
     service: str
     provider: str
     url: str
     account_reference: str
 
 
-def parse_bill_parameters(
+def read_json_bill_params(
     params_file_path="./res/params.json",
-) -> list("PublicServiceParams"):
-    """Get url, service name and account number from a JSON file
+) -> list[WebBillData]:
+    """Convert JSON file to a list of WebBillData objects.
 
     Args:
         params_file_path. JSON file with parameters.
 
     Returns:
-        Parameters dictionary
+        list[WebBillData]
 
     Examples:
-        params = get_bill_parameters()
-        print(params['services']['water'])
+        params = read_json_bill_params()
+        print(params[0].url)
     """
     with open(params_file_path, "r", encoding="UTF-8") as file:
-        params = json.load(file)
+        data = json.load(file)
 
-    params = params["services"]
+    bills = data["services"]
     service_params_list = []
-    for p in params:
+    for bill in bills:
         # p is a dict, get its values expanded to instantiate the dataclass
-        service_params_list.append(PublicService(*p.values()))
+        service_params_list.append(WebBillData(*bill.values()))
 
     return service_params_list
 
 
 def route_service_to_handler(
-    driverWrapper: FirefoxDriverWrapper, service: PublicService
+    driver_wrapper: FirefoxDriverWrapper, bill: WebBillData
 ):
-    if service.provider == "enel":
-        enel_handler(driverWrapper, service)
-    elif service.provider == "EAAB ESP":
-        eab_handler(driverWrapper, service)
-        pass
-    elif service.provider == "Vanti S.A. E.S.P.":
-        vanti_handler(driverWrapper, service)
-        pass  # raise NotImplementedError()
-    elif service.provider == "D":
+    """Route to the right bill handler.
+
+    Args:
+        driver_wrapper (FirefoxDriverWrapper)
+        bill (WebBillData)
+    """
+    if bill.provider == "enel":
+        enel_handler(driver_wrapper, bill)
+    elif bill.provider == "EAAB ESP":
+        eab_handler(driver_wrapper, bill)
+    elif bill.provider == "Vanti S.A. E.S.P.":
+        vanti_handler(driver_wrapper, bill)
+    elif bill.provider == "D":
         print("routing to D")
-        pass  # raise NotImplementedError()
 
 
-def enel_handler(driverWrapper: FirefoxDriverWrapper, service: PublicService):
+def enel_handler(driver_wrapper: FirefoxDriverWrapper, bill: WebBillData):
+    """Handle data collection for Enel bill.
+
+    Args:
+        driver_wrapper (FirefoxDriverWrapper)
+        bill (WebBillData)
+    """
 
     # TODO Add better wrapping so errors in a handler allow logged exits
 
-    driverWrapper.driver.get(service.url)
+    driver_wrapper.driver.get(bill.url)
 
-    el: WebElement
+    elem: WebElement
 
     # Accept cookies button. If not shown, then keep going normally.
     try:
-        driverWrapper.driver.find_element(
+        driver_wrapper.driver.find_element(
             By.XPATH, '//*[@id="truste-consent-button"]'
         ).click()
-    except:
+    except NoSuchElementException:
         logger.info("No ENEL captcha required.")
 
-    driverWrapper.driver.get(service.url)
+    driver_wrapper.driver.get(bill.url)
 
-    el = WebDriverWait(driverWrapper.driver, 20).until(
+    elem = WebDriverWait(driver_wrapper.driver, 20).until(
         EC.presence_of_element_located((By.XPATH, '//*[@id="numero_cuenta"]'))
     )
-    el.send_keys(service.account_reference.split("-")[0])
+    elem.send_keys(bill.account_reference.split("-")[0])
 
-    el = driverWrapper.driver.find_element(By.XPATH, '//*[@id="dv"]')
-    el.send_keys(service.account_reference.split("-")[1])
+    elem = driver_wrapper.driver.find_element(By.XPATH, '//*[@id="dv"]')
+    elem.send_keys(bill.account_reference.split("-")[1])
 
-    el = driverWrapper.driver.find_element(By.XPATH, '//*[@id="solicitar"]')
-    el.send_keys(Keys.ENTER)
+    elem = driver_wrapper.driver.find_element(By.XPATH, '//*[@id="solicitar"]')
+    elem.send_keys(Keys.ENTER)
 
-    el = WebDriverWait(driverWrapper.driver, 20).until(
+    elem = WebDriverWait(driver_wrapper.driver, 20).until(
         EC.presence_of_element_located(
             (By.XPATH, '//*[@id="DataTables_Table_0"]/tbody/tr[1]')
         )
     )
 
-    import re
-
     timestr = time.strftime("%Y%m%d-%H%M")
-    driverWrapper.driver.get_screenshot_as_file(
+    driver_wrapper.driver.get_screenshot_as_file(
         "./images/enel-" + timestr + ".png"
     )
     pttern = re.compile(r"[\n\t]")
-    x = tuple(pttern.split(el.get_attribute("innerText")))
-    logger.info(str(("Enel",) + x))
-    _, date_issued, pay_amount, payment_source, status, _ = x
+    text_data = tuple(pttern.split(elem.get_attribute("innerText")))
+    logger.info(str(("Enel",) + text_data))
+    # _, date_issued, pay_amount, payment_source, status, _ = text_data
     if status == "Emitida":
         status = "Payment not registered."
 
 
-def eab_handler(driverWrapper: FirefoxDriverWrapper, service: PublicService):
+def eab_handler(driver_wrapper: FirefoxDriverWrapper, bill: WebBillData):
+    """Handle data collection for EAB bill.
 
+    Args:
+        driver_wrapper (FirefoxDriverWrapper)
+        bill (WebBillData)
+    """
     # TODO Add better wrapping so errors in a handler allow logged exits
 
-    driverWrapper.driver.get(service.url)
+    driver_wrapper.driver.get(bill.url)
 
-    el: WebElement
+    elem: WebElement
 
-    driverWrapper.driver.get(service.url)
+    driver_wrapper.driver.get(bill.url)
 
-    el = WebDriverWait(driverWrapper.driver, 20).until(
+    elem = WebDriverWait(driver_wrapper.driver, 20).until(
         EC.presence_of_element_located(
             (By.XPATH, '//*[@id="MainContent_tbxContractAccount"]')
         )
     )
-    el.send_keys(service.account_reference)
-    el.send_keys(Keys.ENTER)
+    elem.send_keys(bill.account_reference)
+    elem.send_keys(Keys.ENTER)
 
-    el = WebDriverWait(driverWrapper.driver, 20).until(
+    elem = WebDriverWait(driver_wrapper.driver, 20).until(
         EC.presence_of_element_located(
             (By.XPATH, '//*[@id="MainContent_pnlBills"]')
         )
     )
 
     timestr = time.strftime("%Y%m%d-%H%M")
-    driverWrapper.driver.get_screenshot_as_file(
+    driver_wrapper.driver.get_screenshot_as_file(
         "./images/eab-" + timestr + ".png"
     )
-    text = el.get_attribute("innerText")
+    text = elem.get_attribute("innerText")
     status = "Aprobada" if "aprobada" in text.lower() else "No paga"
     logger.info(str(("EAB", "Ultima factura", status)))
 
 
-def vanti_handler(driverWrapper: FirefoxDriverWrapper, service: PublicService):
+def vanti_handler(driver_wrapper: FirefoxDriverWrapper, bill: WebBillData):
+    """Handle data collection for Vanti bill.
 
+    Args:
+        driver_wrapper (FirefoxDriverWrapper)
+        bill (WebBillData)
+    """
     # TODO Add better wrapping so errors in a handler allow logged exits
 
-    driverWrapper.driver.get(service.url)
+    driver_wrapper.driver.get(bill.url)
 
-    el: WebElement
+    elem: WebElement
 
-    driverWrapper.driver.get(service.url)
+    driver_wrapper.driver.get(bill.url)
 
-    el = driverWrapper.driver.find_element(By.XPATH, '//*[@id="queryID"]')
-    el.send_keys(service.account_reference)
-    el = WebDriverWait(driverWrapper.driver, 20).until(
+    elem = driver_wrapper.driver.find_element(By.XPATH, '//*[@id="queryID"]')
+    elem.send_keys(bill.account_reference)
+    elem = WebDriverWait(driver_wrapper.driver, 20).until(
         EC.presence_of_element_located(
             (By.XPATH, '//*[@id="select2-projectId-container"]')
         )
     )
-    el.click()
-    el = WebDriverWait(driverWrapper.driver, 20).until(
+    elem.click()
+    elem = WebDriverWait(driver_wrapper.driver, 20).until(
         EC.presence_of_element_located(
             (By.XPATH, '(//*[@id="select2-projectId-results"]//li)[2]')
         )
     )
-    el.click()
+    elem.click()
 
     duration = 1000  # milliseconds
     freq = 440  # Hz
     winsound.Beep(freq, duration)
     input("Paused. Waiting for user to type captcha. Press ENTER to resume.")
 
-    el = WebDriverWait(driverWrapper.driver, 20).until(
+    elem = WebDriverWait(driver_wrapper.driver, 20).until(
         EC.presence_of_element_located(
             (By.XPATH, "/html/body/div[1]/div[3]/div/form/div[2]/table[1]")
         )
@@ -249,12 +273,12 @@ def vanti_handler(driverWrapper: FirefoxDriverWrapper, service: PublicService):
     # Pagar	62685426280822	62685426	$ 15.000"
 
     timestr = time.strftime("%Y%m%d-%H%M")
-    driverWrapper.driver.get_screenshot_as_file(
+    driver_wrapper.driver.get_screenshot_as_file(
         "./images/vanti-" + timestr + ".png"
     )
 
     try:
-        text = el.get_attribute("innerText")
+        text = elem.get_attribute("innerText")
         text = text.splitlines()[1]
         text = tuple(text.split("\t")[2:4]) + ("Pendiente",)
     except:
@@ -285,14 +309,14 @@ def main():
     try:
         driver_wrapper = FirefoxDriverWrapper()
         driver = driver_wrapper.driver
-        service_list = parse_bill_parameters()
+        bill_list = read_json_bill_params()
 
-        service: PublicService
-        for service in service_list:
-            route_service_to_handler(driver_wrapper, service)
+        bill: WebBillData
+        for bill in bill_list:
+            route_service_to_handler(driver_wrapper, bill)
             # break
-    except Exception as e:
-        logger.exception(e)
+    except Exception as exc:
+        logger.exception(exc)
     finally:
         driver.quit()
 
