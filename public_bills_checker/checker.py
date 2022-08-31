@@ -186,8 +186,8 @@ def enel_handler(driver_wrapper: FirefoxDriverWrapper, bill: WebBillData):
     text_data = tuple(pttern.split(elem.get_attribute("innerText")))
     logger.info(str(("Enel",) + text_data))
     # _, date_issued, pay_amount, payment_source, status, _ = text_data
-    if status == "Emitida":
-        status = "Payment not registered."
+    # if status == "Emitida":
+    #     status = "Payment not registered."
 
 
 def eab_handler(driver_wrapper: FirefoxDriverWrapper, bill: WebBillData):
@@ -258,8 +258,8 @@ def vanti_handler(driver_wrapper: FirefoxDriverWrapper, bill: WebBillData):
     )
     elem.click()
 
-    duration = 1000  # milliseconds
-    freq = 440  # Hz
+    duration = 500  # milliseconds
+    freq = 700  # Hz
     winsound.Beep(freq, duration)
     input("Paused. Waiting for user to type captcha. Press ENTER to resume.")
 
@@ -285,40 +285,3 @@ def vanti_handler(driver_wrapper: FirefoxDriverWrapper, bill: WebBillData):
         text = ("No encontrada (Paga?)",)
 
     logger.info(str(("Vanti",) + text))
-
-
-def main():
-    """Entry point"""
-
-    # Setup browser
-    # For every bill/service url passed in params.json (command line specified file)
-    #   Go to page with public bill
-    #   Find out the price and enddate or take screenshot for specified account number
-    # End For
-    # Show results like via stdout
-    # Bill A: NameA, Due X, amount Y
-    # Bill B: NameB, Due X, amount Y
-
-    os.chdir("./public_bills_checker")
-
-    try:
-        os.mkdir("images")
-    except:
-        pass
-
-    try:
-        driver_wrapper = FirefoxDriverWrapper()
-        driver = driver_wrapper.driver
-        bill_list = read_json_bill_params()
-
-        bill: WebBillData
-        for bill in bill_list:
-            route_service_to_handler(driver_wrapper, bill)
-            # break
-    except Exception as exc:
-        logger.exception(exc)
-    finally:
-        driver.quit()
-
-
-main()
